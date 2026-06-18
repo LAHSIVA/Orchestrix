@@ -8,6 +8,10 @@ class Settings(BaseSettings):
 
 API_V1_PREFIX: str = "/api/v1"
 
+DATABASE_URL: str = (
+    "postgresql+psycopg://postgres:postgres@localhost:5432/orchestrix"
+)
+
 model_config = SettingsConfigDict(
     env_file=".env",
     case_sensitive=True
