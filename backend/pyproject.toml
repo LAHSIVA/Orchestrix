@@ -1,0 +1,11 @@
+[project]
+name = "Orchestrix"
+version = "0.1.0"
+description = "Enterprise Workflow Orchestration and Approval Platform"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.137.1",
+    "pydantic-settings>=2.14.1",
+    "uvicorn[standard]>=0.49.0",
+]
