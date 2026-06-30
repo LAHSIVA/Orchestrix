@@ -12,7 +12,7 @@ class UserService:
     def create_user(self, payload: UserCreate) -> User:
 
         existing_user = self.repository.get_by_email(
-            payload.email
+            str(payload.email)
         )
 
         if existing_user:
@@ -22,7 +22,7 @@ class UserService:
 
         user = User(
             name=payload.name,
-            email=payload.email,
+            email=str(payload.email),
             role=payload.role,
             status=UserStatus.ACTIVE,
         )
