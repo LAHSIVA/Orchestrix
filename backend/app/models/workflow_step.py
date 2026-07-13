@@ -1,14 +1,10 @@
-import uuid
-from datetime import datetime
-
 from sqlalchemy import Boolean
-from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
-from sqlalchemy import func
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
 
 from app.models.base_entity import BaseEntity
 
@@ -19,6 +15,13 @@ class WorkflowStep(BaseEntity):
         ForeignKey("workflow_definitions.id"),
         nullable=False
     )
+    workflow_definition_id: Mapped[str] = mapped_column(
+    ForeignKey(
+        "workflow_definitions.id",
+        ondelete="CASCADE"
+    ),
+    nullable=False
+)
 
     step_order: Mapped[int] = mapped_column(
         Integer,
