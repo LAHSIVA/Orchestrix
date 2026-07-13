@@ -10,17 +10,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
-from app.db.base import Base
+from app.models.base_entity import BaseEntity
 
-
-class WorkflowStep(Base):
+class WorkflowStep(BaseEntity):
     __tablename__ = "workflow_steps"
-
-    id: Mapped[str] = mapped_column(
-        String,
-        primary_key=True,
-        default=lambda: str(uuid.uuid4())
-    )
 
     workflow_definition_id: Mapped[str] = mapped_column(
         ForeignKey("workflow_definitions.id"),
@@ -45,14 +38,4 @@ class WorkflowStep(Base):
     is_required: Mapped[bool] = mapped_column(
         Boolean,
         default=True
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now()
-    )
-
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now()
     )

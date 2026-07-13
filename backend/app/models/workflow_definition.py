@@ -6,17 +6,11 @@ from sqlalchemy import String
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
-from app.db.base import Base
+from app.models.base_entity import BaseEntity
 
-
-class WorkflowDefinition(Base):
+class WorkflowDefinition(BaseEntity):
     __tablename__ = "workflow_definitions"
 
-    id: Mapped[str] = mapped_column(
-        String,
-        primary_key=True,
-        default=lambda: str(uuid.uuid4())
-    )
 
     name: Mapped[str] = mapped_column(
         String(255),

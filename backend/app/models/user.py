@@ -3,12 +3,12 @@ from sqlalchemy import String
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
-from app.models.base_model import BaseModel
+from app.models.base_entity import BaseEntity
 from app.models.enums import UserRole
 from app.models.enums import UserStatus
 
 
-class User(BaseModel):
+class User(BaseEntity):
     __tablename__ = "users"
 
     name: Mapped[str] = mapped_column(
