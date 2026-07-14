@@ -6,6 +6,7 @@ from sqlalchemy.orm import mapped_column
 from app.models.base_entity import BaseEntity
 from app.models.enums import UserRole
 from app.models.enums import UserStatus
+from sqlalchemy.orm import relationship
 
 
 class User(BaseEntity):
@@ -33,3 +34,7 @@ class User(BaseEntity):
         nullable=False,
         default=UserStatus.ACTIVE
     )
+
+    workflow_instances: Mapped[list["WorkflowInstance"]] = relationship(
+    back_populates="initiator"
+)
