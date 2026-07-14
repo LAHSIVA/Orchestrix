@@ -37,12 +37,13 @@ class WorkflowDefinition(BaseEntity):
     )
 
     steps: Mapped[list["WorkflowStep"]] = relationship(
-        back_populates="workflow_definition",
-        cascade="all, delete-orphan",
-        order_by="WorkflowStep.step_order"
-    )
-
-    instances: Mapped[list["WorkflowInstance"]] = relationship(
+    "WorkflowStep",
     back_populates="workflow_definition",
     cascade="all, delete-orphan"
+)
+
+    instances: Mapped[list["WorkflowInstance"]] = relationship(
+    "WorkflowInstance",
+    back_populates="workflow_definition",
+    cascade="all, delete-orphan",
 )
