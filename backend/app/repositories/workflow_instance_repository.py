@@ -47,3 +47,14 @@ class WorkflowInstanceRepository:
             )
             .all()
         )
+
+    def update(
+        self,
+        workflow_instance: WorkflowInstance,
+    ) -> WorkflowInstance:
+
+            self.db.commit()
+
+            self.db.refresh(workflow_instance)
+
+            return workflow_instance

@@ -18,6 +18,8 @@ from app.services.workflow_instance_service import (
     WorkflowInstanceService,
 )
 
+from app.services.approval_task_service import ApprovalTaskService
+
 from app.repositories.approval_task_repository import (
     ApprovalTaskRepository,
 )
@@ -33,4 +35,14 @@ def get_workflow_instance_service(
         workflow_step_repository=WorkflowStepRepository(db),
         workflow_instance_repository=WorkflowInstanceRepository(db),
         approval_task_repository=ApprovalTaskRepository(db),
+    )
+
+def get_approval_task_service(
+    db: Session = Depends(get_db),
+) -> ApprovalTaskService:
+
+    return ApprovalTaskService(
+        approval_task_repository=ApprovalTaskRepository(db),
+        workflow_instance_repository=WorkflowInstanceRepository(db),
+        workflow_step_repository=WorkflowStepRepository(db),
     )

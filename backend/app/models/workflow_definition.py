@@ -8,6 +8,8 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 
 from app.models.base_entity import BaseEntity
+from app.models.workflow_step import WorkflowStep
+
 
 class WorkflowDefinition(BaseEntity):
     __tablename__ = "workflow_definitions"

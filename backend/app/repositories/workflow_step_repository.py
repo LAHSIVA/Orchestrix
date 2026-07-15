@@ -55,3 +55,20 @@ class WorkflowStepRepository:
             )
             .first()
         )
+    
+    def get_next_step(
+        self,
+        workflow_definition_id: str,
+        current_step_order: int,
+    ) -> WorkflowStep | None:
+
+        return (
+            self.db.query(WorkflowStep)
+            .filter(
+                WorkflowStep.workflow_definition_id
+                == workflow_definition_id,
+                WorkflowStep.step_order
+                == current_step_order + 1,
+            )
+            .first()
+        )

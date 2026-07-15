@@ -11,6 +11,7 @@ from sqlalchemy.orm import relationship
 from app.models.approval_task import ApprovalTask
 
 
+
 class User(BaseEntity):
     __tablename__ = "users"
 

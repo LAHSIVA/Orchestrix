@@ -12,7 +12,6 @@ from app.models.base_entity import BaseEntity
 from app.models.enums import WorkflowStatus
 from app.models.approval_task import ApprovalTask
 
-
 class WorkflowInstance(BaseEntity):
     __tablename__ = "workflow_instances"
 
