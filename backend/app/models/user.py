@@ -8,6 +8,8 @@ from app.models.enums import UserRole
 from app.models.enums import UserStatus
 from sqlalchemy.orm import relationship
 
+from app.models.approval_task import ApprovalTask
+
 
 class User(BaseEntity):
     __tablename__ = "users"
@@ -37,4 +39,9 @@ class User(BaseEntity):
 
     workflow_instances: Mapped[list["WorkflowInstance"]] = relationship(
     back_populates="initiator"
-)
+    )
+
+    approval_tasks: Mapped[list["ApprovalTask"]] = relationship(
+    "ApprovalTask",
+    back_populates="assignee",
+    )

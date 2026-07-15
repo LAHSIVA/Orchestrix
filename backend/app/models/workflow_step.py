@@ -7,6 +7,7 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 
 from app.models.base_entity import BaseEntity
+from app.models.approval_task import ApprovalTask
 
 
 class WorkflowStep(BaseEntity):
@@ -44,4 +45,9 @@ class WorkflowStep(BaseEntity):
         Boolean,
         nullable=False,
         default=True
+    )
+
+    approval_tasks: Mapped[list["ApprovalTask"]] = relationship(
+    "ApprovalTask",
+     back_populates="workflow_step",
     )

@@ -23,3 +23,27 @@ class WorkflowInstanceRepository:
         self.db.refresh(workflow_instance)
 
         return workflow_instance
+
+
+    def get_by_id(
+        self,
+        workflow_instance_id: str,
+    ) -> WorkflowInstance | None:
+
+        return (
+            self.db.query(WorkflowInstance)
+            .filter(
+                WorkflowInstance.id == workflow_instance_id
+            )
+            .first()
+        )
+    
+    def get_all(self) -> list[WorkflowInstance]:
+
+        return (
+            self.db.query(WorkflowInstance)
+            .order_by(
+                WorkflowInstance.created_at.desc()
+            )
+            .all()
+        )

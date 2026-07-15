@@ -1,15 +1,16 @@
 from fastapi import APIRouter
 from fastapi import Depends
-from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
-from app.api.dependencies import get_db
-from app.repositories.workflow_instance_repository import (
-    WorkflowInstanceRepository,
+from app.api.service_dependencies import (
+    get_workflow_instance_service,
 )
+
 from app.schemas.workflow_instance import (
     WorkflowInstanceCreate,
     WorkflowInstanceResponse,
 )
+
 from app.services.workflow_instance_service import (
     WorkflowInstanceService,
 )
@@ -27,13 +28,16 @@ router = APIRouter(
 )
 def start_workflow(
     payload: WorkflowInstanceCreate,
-    db: Session = Depends(get_db),
+    service: WorkflowInstanceService = Depends(
+        get_workflow_instance_service
+    ),
 ):
 
-    repository = WorkflowInstanceRepository(db)
+    try:
+        return service.start_workflow(payload)
 
-    service = WorkflowInstanceService(repository)
-
-    workflow_instance = service.start_workflow(payload)
-
-    return workflow_instance
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )

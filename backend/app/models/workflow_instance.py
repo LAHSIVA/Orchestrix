@@ -10,6 +10,7 @@ from sqlalchemy.orm import relationship
 
 from app.models.base_entity import BaseEntity
 from app.models.enums import WorkflowStatus
+from app.models.approval_task import ApprovalTask
 
 
 class WorkflowInstance(BaseEntity):
@@ -60,3 +61,9 @@ class WorkflowInstance(BaseEntity):
     initiator: Mapped["User"] = relationship(
         back_populates="workflow_instances"
     )
+
+    approval_tasks: Mapped[list["ApprovalTask"]] = relationship(
+    "ApprovalTask",
+    back_populates="workflow_instance",
+    cascade="all, delete-orphan",
+)
