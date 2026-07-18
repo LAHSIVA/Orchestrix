@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from app.models.enums import ApprovalStatus,WorkflowStatus
 from app.models.approval_task import ApprovalTask
-
+from app.schemas.approval_task import ApprovalAction
 
 from app.repositories.approval_task_repository import ApprovalTaskRepository
 from app.repositories.workflow_instance_repository import WorkflowInstanceRepository
@@ -118,4 +118,70 @@ class ApprovalTaskService:
 
         return approval_task
 
-        
+
+    def reject_task(
+        self,
+        approval_task_id: str,
+        payload: ApprovalAction,
+    ):
+    # Find approval task
+        approval_task = (
+            self.approval_task_repository.get_by_id(
+                approval_task_id
+            )
+        )
+
+        if approval_task is None:
+            raise ValueError(
+                "Approval Task does not exist."
+            )
+
+        # Only a pending task can be rejected
+        if approval_task.status != ApprovalStatus.PENDING:
+            raise ValueError(
+                "Approval Task has already been processed."
+            )
+
+        # Rejection reason should be provided
+        if not payload.comments or not payload.comments.strip():
+            raise ValueError(
+                "Rejection comments are required."
+            )
+
+        # Reject current approval task
+        approval_task.status = ApprovalStatus.REJECTED
+        approval_task.comments = payload.comments.strip()
+        approval_task.completed_at = datetime.now(
+            timezone.utc
+        )
+
+        self.approval_task_repository.update(
+            approval_task
+        )
+
+        # Load parent workflow instance
+        workflow_instance = (
+            self.workflow_instance_repository.get_by_id(
+                approval_task.workflow_instance_id
+            )
+        )
+
+        if workflow_instance is None:
+            raise ValueError(
+                "Workflow Instance does not exist."
+            )
+
+        # Reject the entire workflow
+        workflow_instance.status = WorkflowStatus.REJECTED
+
+        workflow_instance.completed_at = datetime.now(
+            timezone.utc
+        )
+
+        self.workflow_instance_repository.update(
+            workflow_instance
+        )
+
+        return approval_task
+
+            

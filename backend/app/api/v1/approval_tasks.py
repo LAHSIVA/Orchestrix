@@ -44,3 +44,26 @@ def approve_task(
             status_code=400,
             detail=str(e),
         )
+
+@router.post(
+    "/{approval_task_id}/reject",
+    response_model=ApprovalTaskResponse,
+)
+def reject_task(
+    approval_task_id: str,
+    payload: ApprovalAction,
+    service: ApprovalTaskService = Depends(
+        get_approval_task_service
+    ),
+):
+    try:
+        return service.reject_task(
+            approval_task_id,
+            payload,
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
