@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 
-from app.models.enums import ApprovalStatus
+from app.models.enums import ApprovalStatus,WorkflowStatus
+from app.models.approval_task import ApprovalTask
+
 
 from app.repositories.approval_task_repository import ApprovalTaskRepository
 from app.repositories.workflow_instance_repository import WorkflowInstanceRepository
@@ -53,6 +55,67 @@ class ApprovalTaskService:
             timezone.utc
         )
 
-        return self.approval_task_repository.update(
-            approval_task
+        self.approval_task_repository.update(
+        approval_task
         )
+
+        workflow_instance = (
+            self.workflow_instance_repository.get_by_id(
+                approval_task.workflow_instance_id
+            )
+        )
+
+        if workflow_instance is None:
+            raise ValueError(
+                "Workflow Instance does not exist."
+            )
+
+        next_step = (
+        self.workflow_step_repository.get_next_step(
+        workflow_definition_id=workflow_instance.workflow_definition_id,
+        current_step_order=workflow_instance.current_step_order,
+            )
+        )
+
+        if next_step is not None:
+
+            # Move workflow to the next step
+            workflow_instance.current_step_order = next_step.step_order
+
+            self.workflow_instance_repository.update(
+                workflow_instance
+            )
+
+            # Create the next pending approval task
+            next_approval_task = ApprovalTask(
+                workflow_instance_id=workflow_instance.id,
+                workflow_step_id=next_step.id,
+
+                # Temporary assignment strategy for Version 1.
+                # Later this will be resolved using RBAC / approver roles.
+                assigned_to=workflow_instance.initiated_by,
+
+                status=ApprovalStatus.PENDING,
+                assigned_at=datetime.now(timezone.utc),
+            )
+
+            self.approval_task_repository.create(
+                next_approval_task
+            )
+
+        else:
+
+            # There are no remaining workflow steps.
+            workflow_instance.status = WorkflowStatus.COMPLETED
+
+            workflow_instance.completed_at = datetime.now(
+                timezone.utc
+            )
+
+            self.workflow_instance_repository.update(
+                workflow_instance
+            )
+
+        return approval_task
+
+        
