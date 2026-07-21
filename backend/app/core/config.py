@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = (
         "postgresql+psycopg://postgres:postgres@localhost:5432/orchestrix"
     )
+    TEST_DATABASE_URL: str
 
     model_config = SettingsConfigDict(
         env_file=".env",
