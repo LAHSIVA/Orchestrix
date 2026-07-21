@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-
+from sqlalchemy.orm import Session
 from app.models.enums import ApprovalStatus,WorkflowStatus
 from app.models.approval_task import ApprovalTask
 from app.schemas.approval_task import ApprovalAction
@@ -15,108 +15,109 @@ class ApprovalTaskService:
 
     def __init__(
         self,
+        db: Session,
         approval_task_repository: ApprovalTaskRepository,
         workflow_instance_repository: WorkflowInstanceRepository,
         workflow_step_repository: WorkflowStepRepository,
     ):
+        self.db = db
         self.approval_task_repository = approval_task_repository
-
         self.workflow_instance_repository = workflow_instance_repository
-
         self.workflow_step_repository = workflow_step_repository
 
     def approve_task(
-        self,
-        approval_task_id: str,
-        payload: ApprovalAction,
+    self,
+    approval_task_id: str,
+    payload: ApprovalAction,
     ):
-
-        approval_task = (
-            self.approval_task_repository.get_by_id(
-                approval_task_id
-            )
-        )
-
-        if approval_task is None:
-            raise ValueError(
-                "Approval Task does not exist."
+        try:
+            approval_task = (
+                self.approval_task_repository.get_by_id(
+                    approval_task_id
+                )
             )
 
-        if approval_task.status != ApprovalStatus.PENDING:
-            raise ValueError(
-                "Approval Task has already been processed."
-            )
+            if approval_task is None:
+                raise ValueError(
+                    "Approval Task does not exist."
+                )
 
-        approval_task.status = ApprovalStatus.APPROVED
+            if approval_task.status != ApprovalStatus.PENDING:
+                raise ValueError(
+                    "Approval Task has already been processed."
+                )
 
-        approval_task.comments = payload.comments
-
-        approval_task.completed_at = datetime.now(
-            timezone.utc
-        )
-
-        self.approval_task_repository.update(
-        approval_task
-        )
-
-        workflow_instance = (
-            self.workflow_instance_repository.get_by_id(
-                approval_task.workflow_instance_id
-            )
-        )
-
-        if workflow_instance is None:
-            raise ValueError(
-                "Workflow Instance does not exist."
-            )
-
-        next_step = (
-        self.workflow_step_repository.get_next_step(
-        workflow_definition_id=workflow_instance.workflow_definition_id,
-        current_step_order=workflow_instance.current_step_order,
-            )
-        )
-
-        if next_step is not None:
-
-            # Move workflow to the next step
-            workflow_instance.current_step_order = next_step.step_order
-
-            self.workflow_instance_repository.update(
-                workflow_instance
-            )
-
-            # Create the next pending approval task
-            next_approval_task = ApprovalTask(
-                workflow_instance_id=workflow_instance.id,
-                workflow_step_id=next_step.id,
-
-                # Temporary assignment strategy for Version 1.
-                # Later this will be resolved using RBAC / approver roles.
-                assigned_to=workflow_instance.initiated_by,
-
-                status=ApprovalStatus.PENDING,
-                assigned_at=datetime.now(timezone.utc),
-            )
-
-            self.approval_task_repository.create(
-                next_approval_task
-            )
-
-        else:
-
-            # There are no remaining workflow steps.
-            workflow_instance.status = WorkflowStatus.COMPLETED
-
-            workflow_instance.completed_at = datetime.now(
+            # Update current task in memory
+            approval_task.status = ApprovalStatus.APPROVED
+            approval_task.comments = payload.comments
+            approval_task.completed_at = datetime.now(
                 timezone.utc
             )
 
-            self.workflow_instance_repository.update(
-                workflow_instance
+            workflow_instance = (
+                self.workflow_instance_repository.get_by_id(
+                    approval_task.workflow_instance_id
+                )
             )
 
-        return approval_task
+            if workflow_instance is None:
+                raise ValueError(
+                    "Workflow Instance does not exist."
+                )
+
+            next_step = (
+                self.workflow_step_repository.get_next_step(
+                    workflow_definition_id=(
+                        workflow_instance.workflow_definition_id
+                    ),
+                    current_step_order=(
+                        workflow_instance.current_step_order
+                    ),
+                )
+            )
+
+            if next_step is not None:
+
+                workflow_instance.current_step_order = (
+                    next_step.step_order
+                )
+
+                next_approval_task = ApprovalTask(
+                    workflow_instance_id=workflow_instance.id,
+                    workflow_step_id=next_step.id,
+                    assigned_to=workflow_instance.initiated_by,
+                    status=ApprovalStatus.PENDING,
+                    assigned_at=datetime.now(timezone.utc),
+                )
+
+                self.approval_task_repository.add(
+                    next_approval_task
+                )
+
+            else:
+
+                workflow_instance.status = (
+                    WorkflowStatus.COMPLETED
+                )
+
+                workflow_instance.completed_at = (
+                    datetime.now(timezone.utc)
+                )
+
+            # ONE COMMIT for the entire state transition
+            self.db.commit()
+
+            self.db.refresh(
+                approval_task
+            )
+
+            return approval_task
+
+        except Exception:
+
+            self.db.rollback()
+
+            raise
 
 
     def reject_task(
@@ -124,64 +125,64 @@ class ApprovalTaskService:
         approval_task_id: str,
         payload: ApprovalAction,
     ):
-    # Find approval task
-        approval_task = (
-            self.approval_task_repository.get_by_id(
-                approval_task_id
-            )
-        )
-
-        if approval_task is None:
-            raise ValueError(
-                "Approval Task does not exist."
+        try:
+            approval_task = (
+                self.approval_task_repository.get_by_id(
+                    approval_task_id
+                )
             )
 
-        # Only a pending task can be rejected
-        if approval_task.status != ApprovalStatus.PENDING:
-            raise ValueError(
-                "Approval Task has already been processed."
+            if approval_task is None:
+                raise ValueError(
+                    "Approval Task does not exist."
+                )
+
+            if approval_task.status != ApprovalStatus.PENDING:
+                raise ValueError(
+                    "Approval Task has already been processed."
+                )
+
+            if not payload.comments or not payload.comments.strip():
+                raise ValueError(
+                    "Rejection comments are required."
+                )
+
+            # Reject task
+            approval_task.status = ApprovalStatus.REJECTED
+            approval_task.comments = payload.comments.strip()
+            approval_task.completed_at = datetime.now(
+                timezone.utc
             )
 
-        # Rejection reason should be provided
-        if not payload.comments or not payload.comments.strip():
-            raise ValueError(
-                "Rejection comments are required."
+            # Find parent workflow
+            workflow_instance = (
+                self.workflow_instance_repository.get_by_id(
+                    approval_task.workflow_instance_id
+                )
             )
 
-        # Reject current approval task
-        approval_task.status = ApprovalStatus.REJECTED
-        approval_task.comments = payload.comments.strip()
-        approval_task.completed_at = datetime.now(
-            timezone.utc
-        )
+            if workflow_instance is None:
+                raise ValueError(
+                    "Workflow Instance does not exist."
+                )
 
-        self.approval_task_repository.update(
-            approval_task
-        )
-
-        # Load parent workflow instance
-        workflow_instance = (
-            self.workflow_instance_repository.get_by_id(
-                approval_task.workflow_instance_id
-            )
-        )
-
-        if workflow_instance is None:
-            raise ValueError(
-                "Workflow Instance does not exist."
+            # Reject entire workflow
+            workflow_instance.status = WorkflowStatus.REJECTED
+            workflow_instance.completed_at = datetime.now(
+                timezone.utc
             )
 
-        # Reject the entire workflow
-        workflow_instance.status = WorkflowStatus.REJECTED
+            # ONE COMMIT
+            self.db.commit()
 
-        workflow_instance.completed_at = datetime.now(
-            timezone.utc
-        )
+            self.db.refresh(
+                approval_task
+            )
 
-        self.workflow_instance_repository.update(
-            workflow_instance
-        )
+            return approval_task
 
-        return approval_task
+        except Exception:
+            self.db.rollback()
+            raise
 
             

@@ -42,6 +42,7 @@ def get_approval_task_service(
 ) -> ApprovalTaskService:
 
     return ApprovalTaskService(
+        db=db,
         approval_task_repository=ApprovalTaskRepository(db),
         workflow_instance_repository=WorkflowInstanceRepository(db),
         workflow_step_repository=WorkflowStepRepository(db),

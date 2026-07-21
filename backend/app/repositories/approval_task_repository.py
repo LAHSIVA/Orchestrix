@@ -65,3 +65,13 @@ class ApprovalTaskRepository:
         self.db.refresh(approval_task)
 
         return approval_task
+
+    def add(
+    self,
+    approval_task: ApprovalTask,
+    ) -> ApprovalTask:
+
+        self.db.add(approval_task)
+        self.db.flush()
+
+        return approval_task
