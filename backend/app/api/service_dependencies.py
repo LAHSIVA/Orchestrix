@@ -24,12 +24,17 @@ from app.repositories.approval_task_repository import (
     ApprovalTaskRepository,
 )
 
+from app.services.workflow_audit_service import (
+    WorkflowAuditService,
+)
+
 
 def get_workflow_instance_service(
     db: Session = Depends(get_db),
 ) -> WorkflowInstanceService:
 
     return WorkflowInstanceService(
+        db=db,
         user_repository=UserRepository(db),
         workflow_definition_repository=WorkflowDefinitionRepository(db),
         workflow_step_repository=WorkflowStepRepository(db),
@@ -46,4 +51,16 @@ def get_approval_task_service(
         approval_task_repository=ApprovalTaskRepository(db),
         workflow_instance_repository=WorkflowInstanceRepository(db),
         workflow_step_repository=WorkflowStepRepository(db),
+    )
+
+def get_workflow_audit_service(
+    db: Session = Depends(get_db),
+) -> WorkflowAuditService:
+    """
+    Provide WorkflowAuditService using the
+    request-scoped database session.
+    """
+
+    return WorkflowAuditService(
+        db=db
     )

@@ -65,4 +65,10 @@ class WorkflowInstance(BaseEntity):
     "ApprovalTask",
     back_populates="workflow_instance",
     cascade="all, delete-orphan",
-)
+    )
+
+    audit_logs: Mapped[list["WorkflowAuditLog"]] = relationship(
+    back_populates="workflow_instance",
+    cascade="all, delete-orphan",
+    order_by="WorkflowAuditLog.created_at",
+    )

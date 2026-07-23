@@ -1,5 +1,6 @@
 from app.models.approval_task import ApprovalTask
 from app.models.workflow_instance import WorkflowInstance
+from app.models.workflow_audit_log import WorkflowAuditLog
 from unittest.mock import patch
 
 
@@ -1361,4 +1362,849 @@ def test_transaction_failure_rolls_back_all_changes(
     assert (
         all_tasks[0].status.value
         == "PENDING"
+    )
+
+
+def test_complete_workflow_creates_correct_audit_history(
+    client,
+    db_session,
+):
+    """
+    Verify that a successful two-step workflow creates
+    the complete audit history in the correct order.
+
+    Expected sequence:
+
+    1. WORKFLOW_STARTED
+    2. TASK_CREATED
+    3. TASK_APPROVED
+    4. WORKFLOW_ADVANCED
+    5. TASK_CREATED
+    6. TASK_APPROVED
+    7. WORKFLOW_COMPLETED
+    """
+
+    # =========================================================
+    # STEP 1 — CREATE USER
+    # =========================================================
+
+    user_response = client.post(
+        "/users",
+        json={
+            "name": "Audit Test EMPLOYEE",
+            "email": "audit.EMPLOYEE@test.com",
+            "role": "EMPLOYEE",
+        },
+    )
+
+    assert user_response.status_code in (200, 201), (
+        f"User creation failed: "
+        f"{user_response.status_code} "
+        f"{user_response.text}"
+    )
+
+    user_id = user_response.json()["id"]
+
+
+    # =========================================================
+    # STEP 2 — CREATE WORKFLOW DEFINITION
+    # =========================================================
+
+    workflow_response = client.post(
+        "/workflow-definitions",
+        json={
+            "name": "Automated Audit Trail Workflow",
+            "description": (
+                "Two-step workflow used to verify "
+                "complete audit-history generation."
+            ),
+        },
+    )
+
+    assert workflow_response.status_code in (200, 201), (
+        f"Workflow creation failed: "
+        f"{workflow_response.status_code} "
+        f"{workflow_response.text}"
+    )
+
+    workflow_definition_id = (
+        workflow_response.json()["id"]
+    )
+
+
+    # =========================================================
+    # STEP 3 — CREATE WORKFLOW STEP #1
+    # =========================================================
+
+    step_1_response = client.post(
+        "/workflow-steps",
+        json={
+            "workflow_definition_id":
+                workflow_definition_id,
+            "step_order": 1,
+            "step_name": "EMPLOYEE Approval",
+            "approver_role": "EMPLOYEE",
+            "is_required": True,
+        },
+    )
+
+    assert step_1_response.status_code in (200, 201), (
+        f"Step #1 creation failed: "
+        f"{step_1_response.status_code} "
+        f"{step_1_response.text}"
+    )
+
+    step_1_id = step_1_response.json()["id"]
+
+
+    # =========================================================
+    # STEP 4 — CREATE WORKFLOW STEP #2
+    # =========================================================
+
+    step_2_response = client.post(
+        "/workflow-steps",
+        json={
+            "workflow_definition_id":
+                workflow_definition_id,
+            "step_order": 2,
+            "step_name": "Finance Approval",
+            "approver_role": "EMPLOYEE",
+            "is_required": True,
+        },
+    )
+
+    assert step_2_response.status_code in (200, 201), (
+        f"Step #2 creation failed: "
+        f"{step_2_response.status_code} "
+        f"{step_2_response.text}"
+    )
+
+    step_2_id = step_2_response.json()["id"]
+
+
+    # =========================================================
+    # STEP 5 — START WORKFLOW
+    # =========================================================
+
+    instance_response = client.post(
+        "/workflow-instances",
+        json={
+            "workflow_definition_id":
+                workflow_definition_id,
+            "initiated_by": user_id,
+        },
+    )
+
+    assert instance_response.status_code in (200, 201), (
+        f"Workflow instance creation failed: "
+        f"{instance_response.status_code} "
+        f"{instance_response.text}"
+    )
+
+    workflow_instance_id = (
+        instance_response.json()["id"]
+    )
+
+
+    # =========================================================
+    # STEP 6 — VERIFY INITIAL AUDIT HISTORY
+    # =========================================================
+
+    db_session.expire_all()
+
+    initial_audit_logs = (
+        db_session.query(WorkflowAuditLog)
+        .filter(
+            WorkflowAuditLog.workflow_instance_id
+            == workflow_instance_id
+        )
+        .order_by(
+            WorkflowAuditLog.created_at.asc()
+        )
+        .all()
+    )
+
+    assert len(initial_audit_logs) == 2
+
+    initial_events = [
+        log.event_type.value
+        for log in initial_audit_logs
+    ]
+
+    assert initial_events == [
+        "WORKFLOW_STARTED",
+        "TASK_CREATED",
+    ]
+
+
+    # =========================================================
+    # STEP 7 — FIND TASK #1
+    # =========================================================
+
+    task_1 = (
+        db_session.query(ApprovalTask)
+        .filter(
+            ApprovalTask.workflow_instance_id
+            == workflow_instance_id,
+            ApprovalTask.workflow_step_id
+            == step_1_id,
+        )
+        .first()
+    )
+
+    assert task_1 is not None
+
+    assert task_1.status.value == "PENDING"
+
+    task_1_id = task_1.id
+
+
+    # =========================================================
+    # STEP 8 — APPROVE TASK #1
+    # =========================================================
+
+    approve_task_1_response = client.post(
+        f"/approval-tasks/{task_1_id}/approve",
+        json={
+            "comments": (
+                "EMPLOYEE approved during "
+                "audit-history test."
+            )
+        },
+    )
+
+    assert approve_task_1_response.status_code in (
+        200,
+        201,
+    ), (
+        f"Task #1 approval failed: "
+        f"{approve_task_1_response.status_code} "
+        f"{approve_task_1_response.text}"
+    )
+
+
+    # =========================================================
+    # STEP 9 — VERIFY INTERMEDIATE AUDIT HISTORY
+    # =========================================================
+
+    db_session.expire_all()
+
+    intermediate_audit_logs = (
+        db_session.query(WorkflowAuditLog)
+        .filter(
+            WorkflowAuditLog.workflow_instance_id
+            == workflow_instance_id
+        )
+        .order_by(
+            WorkflowAuditLog.created_at.asc()
+        )
+        .all()
+    )
+
+    assert len(intermediate_audit_logs) == 5
+
+    intermediate_events = [
+        log.event_type.value
+        for log in intermediate_audit_logs
+    ]
+
+    assert intermediate_events == [
+        "WORKFLOW_STARTED",
+        "TASK_CREATED",
+        "TASK_APPROVED",
+        "WORKFLOW_ADVANCED",
+        "TASK_CREATED",
+    ]
+
+
+    # =========================================================
+    # STEP 10 — FIND TASK #2
+    # =========================================================
+
+    db_session.expire_all()
+
+    task_2 = (
+        db_session.query(ApprovalTask)
+        .filter(
+            ApprovalTask.workflow_instance_id
+            == workflow_instance_id,
+            ApprovalTask.workflow_step_id
+            == step_2_id,
+        )
+        .first()
+    )
+
+    assert task_2 is not None
+
+    assert task_2.status.value == "PENDING"
+
+    task_2_id = task_2.id
+
+
+    # =========================================================
+    # STEP 11 — APPROVE TASK #2
+    # =========================================================
+
+    approve_task_2_response = client.post(
+        f"/approval-tasks/{task_2_id}/approve",
+        json={
+            "comments": (
+                "Finance approved during "
+                "audit-history test."
+            )
+        },
+    )
+
+    assert approve_task_2_response.status_code in (
+        200,
+        201,
+    ), (
+        f"Task #2 approval failed: "
+        f"{approve_task_2_response.status_code} "
+        f"{approve_task_2_response.text}"
+    )
+
+
+    # =========================================================
+    # STEP 12 — LOAD COMPLETE AUDIT HISTORY
+    # =========================================================
+
+    db_session.expire_all()
+
+    audit_logs = (
+        db_session.query(WorkflowAuditLog)
+        .filter(
+            WorkflowAuditLog.workflow_instance_id
+            == workflow_instance_id
+        )
+        .order_by(
+            WorkflowAuditLog.created_at.asc()
+        )
+        .all()
+    )
+
+
+    # =========================================================
+    # STEP 13 — VERIFY EXACT EVENT COUNT
+    # =========================================================
+
+    assert len(audit_logs) == 7, (
+        "Expected exactly 7 audit events, "
+        f"but found {len(audit_logs)}."
+    )
+
+
+    # =========================================================
+    # STEP 14 — VERIFY EXACT EVENT ORDER
+    # =========================================================
+
+    actual_events = [
+        log.event_type.value
+        for log in audit_logs
+    ]
+
+    expected_events = [
+        "WORKFLOW_STARTED",
+        "TASK_CREATED",
+        "TASK_APPROVED",
+        "WORKFLOW_ADVANCED",
+        "TASK_CREATED",
+        "TASK_APPROVED",
+        "WORKFLOW_COMPLETED",
+    ]
+
+    assert actual_events == expected_events, (
+        "\nExpected audit sequence:\n"
+        f"{expected_events}\n\n"
+        "Actual audit sequence:\n"
+        f"{actual_events}"
+    )
+
+
+    # =========================================================
+    # STEP 15 — VERIFY WORKFLOW_STARTED EVENT
+    # =========================================================
+
+    workflow_started_event = audit_logs[0]
+
+    assert (
+        workflow_started_event.actor_id
+        == user_id
+    )
+
+    assert (
+        workflow_started_event.from_status
+        is None
+    )
+
+    assert (
+        workflow_started_event.to_status
+        == "IN_PROGRESS"
+    )
+
+
+    # =========================================================
+    # STEP 16 — VERIFY INITIAL TASK_CREATED EVENT
+    # =========================================================
+
+    first_task_created_event = audit_logs[1]
+
+    assert (
+        first_task_created_event.approval_task_id
+        == task_1_id
+    )
+
+    assert (
+        first_task_created_event.to_status
+        == "PENDING"
+    )
+
+
+    # =========================================================
+    # STEP 17 — VERIFY TASK #1 APPROVAL EVENT
+    # =========================================================
+
+    task_1_approved_event = audit_logs[2]
+
+    assert (
+        task_1_approved_event.approval_task_id
+        == task_1_id
+    )
+
+    assert (
+        task_1_approved_event.from_status
+        == "PENDING"
+    )
+
+    assert (
+        task_1_approved_event.to_status
+        == "APPROVED"
+    )
+
+
+    # =========================================================
+    # STEP 18 — VERIFY WORKFLOW ADVANCEMENT
+    # =========================================================
+
+    workflow_advanced_event = audit_logs[3]
+
+    assert (
+        workflow_advanced_event.event_metadata[
+            "from_step_order"
+        ]
+        == 1
+    )
+
+    assert (
+        workflow_advanced_event.event_metadata[
+            "to_step_order"
+        ]
+        == 2
+    )
+
+
+    # =========================================================
+    # STEP 19 — VERIFY SECOND TASK CREATED
+    # =========================================================
+
+    second_task_created_event = audit_logs[4]
+
+    assert (
+        second_task_created_event.approval_task_id
+        == task_2_id
+    )
+
+    assert (
+        second_task_created_event.to_status
+        == "PENDING"
+    )
+
+
+    # =========================================================
+    # STEP 20 — VERIFY TASK #2 APPROVAL
+    # =========================================================
+
+    task_2_approved_event = audit_logs[5]
+
+    assert (
+        task_2_approved_event.approval_task_id
+        == task_2_id
+    )
+
+    assert (
+        task_2_approved_event.from_status
+        == "PENDING"
+    )
+
+    assert (
+        task_2_approved_event.to_status
+        == "APPROVED"
+    )
+
+
+    # =========================================================
+    # STEP 21 — VERIFY WORKFLOW COMPLETION
+    # =========================================================
+
+    workflow_completed_event = audit_logs[6]
+
+    assert (
+        workflow_completed_event.from_status
+        == "IN_PROGRESS"
+    )
+
+    assert (
+        workflow_completed_event.to_status
+        == "COMPLETED"
+    )
+
+
+    # =========================================================
+    # STEP 22 — VERIFY FINAL WORKFLOW STATE
+    # =========================================================
+
+    db_session.expire_all()
+
+    final_workflow = (
+        db_session.query(WorkflowInstance)
+        .filter(
+            WorkflowInstance.id
+            == workflow_instance_id
+        )
+        .first()
+    )
+
+    assert final_workflow is not None
+
+    assert (
+        final_workflow.status.value
+        == "COMPLETED"
+    )
+
+    assert (
+        final_workflow.completed_at
+        is not None
+    )
+
+def test_audit_history_api_returns_complete_history(
+    client,
+    db_session,
+):
+    """
+    Verify that audit history can be retrieved through
+    the public API in the correct chronological order.
+    """
+
+    # ---------------------------------------------------------
+    # 1. CREATE USER
+    # ---------------------------------------------------------
+
+    user_response = client.post(
+        "/users",
+        json={
+            "name": "Audit API EMPLOYEE",
+            "email": "audit.api.EMPLOYEE@test.com",
+            "role": "EMPLOYEE",
+        },
+    )
+
+    assert user_response.status_code in (200, 201), (
+    f"User creation failed: "
+    f"{user_response.status_code} "
+    f"{user_response.text}"
+)
+
+    user_id = user_response.json()["id"]
+
+
+    # ---------------------------------------------------------
+    # 2. CREATE WORKFLOW DEFINITION
+    # ---------------------------------------------------------
+
+    workflow_response = client.post(
+        "/workflow-definitions",
+        json={
+            "name": "Audit API Test Workflow",
+            "description": (
+                "Workflow used to test the "
+                "audit-history API."
+            ),
+        },
+    )
+
+    assert workflow_response.status_code in (200, 201), (
+    f"Workflow creation failed: "
+    f"{workflow_response.status_code} "
+    f"{workflow_response.text}"
+)
+
+    workflow_definition_id = (
+        workflow_response.json()["id"]
+    )
+
+
+    # ---------------------------------------------------------
+    # 3. CREATE STEP 1
+    # ---------------------------------------------------------
+
+    step_1_response = client.post(
+        "/workflow-steps",
+        json={
+            "workflow_definition_id":
+                workflow_definition_id,
+            "step_order": 1,
+            "step_name": "EMPLOYEE Approval",
+            "approver_role": "EMPLOYEE",
+            "is_required": True,
+        },
+    )
+
+    assert step_1_response.status_code in (200, 201), (
+    f"Step 1 creation failed: "
+    f"{step_1_response.status_code} "
+    f"{step_1_response.text}"
+)
+
+    step_1_id = step_1_response.json()["id"]
+
+
+    # ---------------------------------------------------------
+    # 4. CREATE STEP 2
+    # ---------------------------------------------------------
+
+    step_2_response = client.post(
+        "/workflow-steps",
+        json={
+            "workflow_definition_id":
+                workflow_definition_id,
+            "step_order": 2,
+            "step_name": "Finance Approval",
+            "approver_role": "EMPLOYEE",
+            "is_required": True,
+        },
+    )
+
+    assert step_2_response.status_code in (200, 201), (
+    f"Step 2 creation failed: "
+    f"{step_2_response.status_code} "
+    f"{step_2_response.text}"
+)
+
+    step_2_id = step_2_response.json()["id"]
+
+
+    # ---------------------------------------------------------
+    # 5. START WORKFLOW
+    # ---------------------------------------------------------
+
+    instance_response = client.post(
+        "/workflow-instances",
+        json={
+            "workflow_definition_id":
+                workflow_definition_id,
+            "initiated_by": user_id,
+        },
+    )
+
+    assert instance_response.status_code in (200, 201), (
+    f"Workflow instance creation failed: "
+    f"{instance_response.status_code} "
+    f"{instance_response.text}"
+)
+
+    workflow_instance_id = (
+        instance_response.json()["id"]
+    )
+
+
+    # ---------------------------------------------------------
+    # 6. FIND AND APPROVE TASK 1
+    # ---------------------------------------------------------
+
+    db_session.expire_all()
+
+    task_1 = (
+        db_session.query(ApprovalTask)
+        .filter(
+            ApprovalTask.workflow_instance_id
+            == workflow_instance_id,
+            ApprovalTask.workflow_step_id
+            == step_1_id,
+        )
+        .first()
+    )
+
+    assert task_1 is not None
+
+    task_1_response = client.post(
+        f"/approval-tasks/{task_1.id}/approve",
+        json={
+            "comments": "EMPLOYEE approved."
+        },
+    )
+
+    assert task_1_response.status_code in (200, 201)
+
+
+    # ---------------------------------------------------------
+    # 7. FIND AND APPROVE TASK 2
+    # ---------------------------------------------------------
+
+    db_session.expire_all()
+
+    task_2 = (
+        db_session.query(ApprovalTask)
+        .filter(
+            ApprovalTask.workflow_instance_id
+            == workflow_instance_id,
+            ApprovalTask.workflow_step_id
+            == step_2_id,
+        )
+        .first()
+    )
+
+    assert task_2 is not None
+
+    task_2_response = client.post(
+        f"/approval-tasks/{task_2.id}/approve",
+        json={
+            "comments": "Finance approved."
+        },
+    )
+
+    assert task_2_response.status_code in (200, 201)
+
+
+    # ---------------------------------------------------------
+    # 8. CALL AUDIT HISTORY API
+    # ---------------------------------------------------------
+
+    audit_response = client.get(
+        f"/workflow-instances/"
+        f"{workflow_instance_id}/audit-logs"
+    )
+
+    assert audit_response.status_code == 200, (
+        f"Audit API failed: "
+        f"{audit_response.status_code} "
+        f"{audit_response.text}"
+    )
+
+    audit_logs = audit_response.json()
+
+
+    # ---------------------------------------------------------
+    # 9. VERIFY EVENT COUNT
+    # ---------------------------------------------------------
+
+    assert len(audit_logs) == 7
+
+
+    # ---------------------------------------------------------
+    # 10. VERIFY EXACT EVENT SEQUENCE
+    # ---------------------------------------------------------
+
+    actual_events = [
+        audit_log["event_type"]
+        for audit_log in audit_logs
+    ]
+
+    expected_events = [
+        "WORKFLOW_STARTED",
+        "TASK_CREATED",
+        "TASK_APPROVED",
+        "WORKFLOW_ADVANCED",
+        "TASK_CREATED",
+        "TASK_APPROVED",
+        "WORKFLOW_COMPLETED",
+    ]
+
+    assert actual_events == expected_events
+
+
+    # ---------------------------------------------------------
+    # 11. VERIFY RESPONSE STRUCTURE
+    # ---------------------------------------------------------
+
+    required_fields = {
+        "id",
+        "workflow_instance_id",
+        "approval_task_id",
+        "actor_id",
+        "event_type",
+        "from_status",
+        "to_status",
+        "event_metadata",
+        "created_at",
+    }
+
+    for audit_log in audit_logs:
+
+        assert required_fields.issubset(
+            audit_log.keys()
+        )
+
+        assert (
+            audit_log["workflow_instance_id"]
+            == workflow_instance_id
+        )
+
+
+    # ---------------------------------------------------------
+    # 12. VERIFY IMPORTANT TRANSITIONS
+    # ---------------------------------------------------------
+
+    assert audit_logs[0]["event_type"] == (
+        "WORKFLOW_STARTED"
+    )
+
+    assert audit_logs[0]["from_status"] is None
+
+    assert audit_logs[0]["to_status"] == (
+        "IN_PROGRESS"
+    )
+
+
+    assert audit_logs[2]["event_type"] == (
+        "TASK_APPROVED"
+    )
+
+    assert audit_logs[2]["from_status"] == (
+        "PENDING"
+    )
+
+    assert audit_logs[2]["to_status"] == (
+        "APPROVED"
+    )
+
+
+    assert audit_logs[3]["event_type"] == (
+        "WORKFLOW_ADVANCED"
+    )
+
+    assert (
+        audit_logs[3]["event_metadata"][
+            "from_step_order"
+        ]
+        == 1
+    )
+
+    assert (
+        audit_logs[3]["event_metadata"][
+            "to_step_order"
+        ]
+        == 2
+    )
+
+
+    assert audit_logs[6]["event_type"] == (
+        "WORKFLOW_COMPLETED"
+    )
+
+    assert audit_logs[6]["from_status"] == (
+        "IN_PROGRESS"
+    )
+
+    assert audit_logs[6]["to_status"] == (
+        "COMPLETED"
     )
